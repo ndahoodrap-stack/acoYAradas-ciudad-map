@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Auto-completar Dirección Local</title>
+    
+    <!-- Leaflet (Visor del mapa) -->
+    <link rel="stylesheet" href="https://unpkg.com" />
+    <script src="https://unpkg.com"></script>
+    
+    <!-- Turf.js (Para calcular distancias y encontrar la calle más cercana en el celular) -->
+    <script src="https://jsdelivr.net"></script>
+
+    <style>
+        body { font-family: sans-serif; padding: 20px; background: #f4f4f9; }
+        .container { max-width: 500px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+        input { width: 100%; padding: 10px; margin: 10px 0; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }
+        button { width: 100%; padding: 12px; background: #007bff; color: white; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; }
+        button:hover { background: #0056b3; }
+        #map { height: 250px; width: 100%; margin-top: 15px; border-radius: 4px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>Tu Ubicación</h2>
+    <button onclick="buscarMiUbicacion()">📍 Detectar mi dirección automáticamente</button>
+    
+    <label for="direccion">Dirección detectada:</label>
+    <input type="text" id="direccion" placeholder="Esperando ubicación..." readonly>
+
+    <div id="map"></div>
+</div>
+
+<script>
+    // 1. Inicializar mapa centrado en Bolívar
+    var map = L.map('map').setView([-36.229, -61.229], 14);
+    var marcador;
+    var datosCallesGeoJSON;
+
+    // Agregar un fondo de mapa básico y libre (OpenStreetMap estándar)
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+    // 2. Cargar tu archivo GeoJSON corregido (debe estar en la misma carpeta en GitHub)
+    fetch('Bolivarcalles.geojson')
+        .then(response => response.json())
+        .then(data => {
+            datosCallesGeoJSON = data;
+            // Dibujar las calles en el mapa de forma sutil
+            L.geoJSON(data, { style: { color: "#ddd", weight: 2 } }).addTo(map);
+        });
+
+    // 3. Función principal para Geolocalizar el celular
+    function buscarMiUbicacion() {
+        if (!navigator.geolocation) {
+            alert("Tu navegador no soporta geolocalización.");
+            return;
+        }
+
+        document.getElementById('direccion').value = "Calculando...";
+
+        navigator.geolocation.getCurrentPosition(function(position) {
+            var lat = position.coords.latitude;
+            var lon = position.coords.longitude;
+
+            // Mover el mapa y el marcador a donde está el usuario
+            map.setView([lat, lon], 17);
+            if (marcador) { map.removeLayer(marcador); }
+            marcador = L.marker([lat, lon]).addTo(map);
+
+            // Convertir la posición del usuario a un formato que Turf entienda
+            var miPosicion = turf.point([lon, lat]);
+
+            var calleMasCercana = null;
+            var distanciaMinima = Infinity;
+
+            // Recorrer el GeoJSON para encontrar la línea (calle) más cercana a tu GPS
+            turf.featureEach(datosCallesGeoJSON, function(currentFeature) {
+                if (currentFeature.geometry.type === "LineString" || currentFeature.geometry.type === "MultiLineString") {
+                    // Turf calcula la distancia exacta entre el GPS y la calle
+                    var snapped = turf.nearestPointOnLine(currentFeature, miPosicion);
+                    var distancia = snapped.properties.dist;
+
+                    if (distancia < distanciaMinima) {
+                        distanciaMinima = distancia;
+                        calleMasCercana = currentFeature;
+                    }
+                }
+            });
+
+            // 4. Rellenar el input con el nombre guardado en las propiedades del GeoJSON
+            if (calleMasCercana && calleMasCercana.properties.name) {
+                document.getElementById('direccion').value = calleMasCercana.properties.name;
+            } else {
+                document.getElementById('direccion').value = "Calle sin nombre detectada cerca";
+            }
+
+        }, function() {
+            alert("No se pudo acceder a tu ubicación. Asegúrate de dar permisos de GPS.");
+            document.getElementById('direccion').value = "";
+        });
+    }
+</script>
+
+</body>
+</html>
